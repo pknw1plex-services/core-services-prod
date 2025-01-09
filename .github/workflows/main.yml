@@ -1,0 +1,58 @@
+  name: Manage
+
+  on:
+    workflow_dispatch:
+      inputs:
+        backup_service:
+          description: 'Backup Service'
+          required: true
+          type: boolean
+        backup_config:
+          description: 'Backup Config'
+          required: true
+          type: boolean
+  env: 
+    DOCKER_ROOT: "/etc/docker/services"
+    
+  jobs:
+
+    backup_service:
+      runs-on: ubuntu-latest
+      if:  ${{ inputs.backup_service }} 
+      steps:
+      - uses: actions/checkout@v3
+      - name: Get repository name
+        id: repo-name
+        uses: MariachiBear/get-repo-name-action@v1.1.0
+        with:
+          with-owner: 'false'
+          string-case: 'lowercase'
+      - name: executing remote ssh commands using password
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_SERVER }}
+          username:  ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: cd /etc/docker/services/${{ steps.repo-name.outputs.repository-name }} && echo $(date) > ver && git add . && git commit -m "auto" && git push
+
+
+    backup_config:
+      runs-on: ubuntu-latest
+      if:  ${{ inputs.backup_config }} 
+      steps:
+      - uses: actions/checkout@v3
+      - name: Get repository name
+        id: repo-name
+        uses: MariachiBear/get-repo-name-action@v1.1.0
+        with:
+          with-owner: 'false'
+          string-case: 'lowercase'
+      - name: executing remote ssh commands using password
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_SERVER }}
+          username:  ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: cd /etc/docker/services/${{ steps.repo-name.outputs.repository-name }}/config && echo $(date) > ver && git add . && git commit -m "auto" && git push

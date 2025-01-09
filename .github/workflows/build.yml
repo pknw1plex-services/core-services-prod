@@ -1,17 +1,18 @@
  name: Build Dockerfile
 
-  on:
-    workflow_dispatch:
-      inputs:
-        docker_build:
-          description: 'Backup Service'
-          required: true
-          type: boolean
-          default: true
-        docker_pull:
-          description: 'Backup Config'
-          required: true
-          type: boolean
+ on:
+   workflow_dispatch:
+     inputs:
+       docker_build:
+         description: 'Backup Service'
+         required: true
+         type: boolean
+         default: true
+       docker_pull:
+         description: 'Backup Config'
+         required: true
+         type: boolean
+         
   jobs:
     docker_build:
       if:  ${{ inputs.docker_build }} 

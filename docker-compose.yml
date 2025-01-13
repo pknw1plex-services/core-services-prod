@@ -11,33 +11,38 @@ services:
       - TS_USERSPACE=false
       - TS_DEST_IP=${DMZ_NETWORK_ROUTE}
     volumes:
-      - /etc/docker/config/tailscale/state:/var/lib/tailscale
+      - ./config/tailscale/state:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
     cap_add:
       - net_admin
       - sys_module
     networks:
-      - ${DMZ_NETWORK}
+      - proxy
     restart: unless-stopped
 
   nginx_proxy_manager:
     image: 'docker.io/jc21/nginx-proxy-manager:latest'
     restart: unless-stopped
     env_file: .env
+    dns:
+      - 172.22.20.1
+      - 8.8.8.8
+      - 100.100.100.100
     ports:
       - ${HOST_IP}:80:80
       - ${HOST_IP}:443:443
-      - ${DMZ_NETWORK_ROUTE}:81:81
-      - ${DMZ_NETWORK_ROUTE}:80:80
-      - ${DMZ_NETWORK_ROUTE}:443:443
+        #- ${HOST_IP}:81:81
+      - 100.100.69.2:80:80
+      - 100.100.69.2:443:443
+      - 100.100.69.2:81:81
     privileged: true
     volumes:
-      - /etc/docker/config/nginx_proxy_manager/data:/data
-      - /etc/docker/config/nginx_proxy_manager/letsencrypt:/etc/letsencrypt
+      - ./config/nginx_proxy_manager/data:/data
+      - ./config/nginx_proxy_manager/letsencrypt:/etc/letsencrypt
     container_name: proxymanager
     hostname: proxymanager
     networks:
-      - ${DMZ_NETWORK}
+      - proxy
     environment:
       - VIRTUAL_HOST=proxymanager.admin.${TLD}
       - VIRTUAL_PORT=81
@@ -52,27 +57,34 @@ services:
   internal_proxy:
     image: nginxproxy/nginx-proxy:latest
     container_name: internal_proxy
+    hostname: internal_proxy
     volumes:
+      #- /etc/docker/config/internal_proxy/custom_config/proxy.conf:/etc/nginx/proxy.conf
+      - ./config/internal_proxy/error_pages:/etc/nginx/error_pages
       - /var/run/docker.sock:/tmp/docker.sock
       - /var/run/fcgiwrap.socket:/var/run/fcgiwrap.socket
       - /var/run/php-fpm.sock:/var/run/php-fpm.sock
+    ports:
+      - 172.22.20.1:8888:80
+    dns:
+      - 172.22.20.1
+      - 8.8.8.8
+      - 100.100.100.100
     networks:
-      dmz:
-      public:
-      secure:
-      admin:
+      proxy:
     environment:
       - TRUST_DOWNSTREAM_PROXY=true
+
   sso:
     env_file: .env
     image: pknw1/plexsso:custom #drkno/plexsso:latest
     container_name: sso
     hostname: sso
     networks:
-      public:
+      proxy:
     volumes:
-      - /etc/docker/config/sso:/config
-      - /etc/docker/config/sso/marvin-eyes-DpuYtzcb.png:/app/ui/assets/marvin-eyes-DpuYtzcb.png
+      - ./config/sso:/config
+      - ./config/sso/marvin-eyes-DpuYtzcb.png:/app/ui/assets/marvin-eyes-DpuYtzcb.png
     environment:
       - VIRTUAL_HOST=sso.pknw1.co.uk
       - VIRTUAL_PORT=4200
@@ -91,19 +103,17 @@ services:
     cap_add:
       - NET_ADMIN
     networks:
-      - admin
       - proxy
     privileged: true
     ports:
-      - 172.200.0.1:53:53/tcp
-      - 172.200.0.1:53:53/udp
-      - 172.18.0.1:53:53/tcp
-      - 172.18.0.1:53:53/udp
+      - 172.22.20.1:53:53/tcp
+      - 172.22.20.1:53:53/udp
     volumes:
-      - /etc/resolv.conf:/etc/host-resolv.conf
-      - /etc/docker/config/pihole/lighttpd:/etc/lighttpd
-      - /etc/docker/config/pihole/etc:/etc/pihole
-      - /etc/docker/config/pihole/dnsmasq.d:/etc/dnsmasq.d
+      #      - /etc/resolv.conf:/etc/host-resolv.conf
+      - /etc/pihole/custom.list:/etc/pihole/custom.list
+      - ./config/pihole/lighttpd:/etc/lighttpd
+      - ./config/pihole/etc:/etc/pihole
+      - ./config/pihole/dnsmasq.d:/etc/dnsmasq.d
     environment:
       - APP_GROUP=Utilities
       - APP_LOGO=https://www.mycyberuniverse.com/images/articles/Arthur/how-update-pi-hole/pi-hole-logo.png
@@ -119,23 +129,21 @@ services:
   squid:
     image: ubuntu/squid:latest
     dns:
-      - 172.18.0.1
+      - 172.22.20.1
       - 1.1.1.1
       - 8.8.8.8
     container_name: squid
     hostname: squid
     networks:
-      - admin
       - proxy
     ports:
-      - 172.200.0.1:3128:3128
-      - 172.18.0.1:3128:3128
+      - 172.22.20.1:3128:3128
     volumes:
-      - /etc/docker/config/squid/etc:/etc/squid
-      - /etc/docker/config/squid/shared-acl-lists:/acl:ro
-      - /etc/docker/config/squid/pid:/run/squid
-      - /etc/docker/config/squid/logs:/var/log/squid
-      - /etc/docker/config/squid/cache:/var/spool/squid
+      - ./config/squid/etc:/etc/squid
+      - ./config/squid/shared-acl-lists:/acl:ro
+      - ./config/squid/pid:/run/squid
+      - ./config/squid/logs:/var/log/squid
+      - ./config/squid/cache:/var/spool/squid
     environment:
       - APP_GROUP=Utilities
       - APP_LOGO=https://kifarunix.com/wp-content/uploads/2018/12/squid-proxy.png
@@ -146,19 +154,25 @@ services:
 
   caddy:
     networks:
-      - public
+      - proxy
     image: caddy:latest
     container_name: caddy
     hostname: caddy
     volumes:
-      - /etc/docker/config/caddy:/config
+      - ./config/caddy:/config
       - /media/www:/var/www
     entrypoint: ["caddy", "run", "--config=/config/Caddyfile", "--watch" ]
+    ports:
+      - 172.22.20.1:8889:80
+    dns:
+      - 172.22.20.1
+      - 8.8.8.8
+      - 100.100.100.100
     environment:
       - APP_GROUP=Content
       - APP_LOGO=https://www.redpill-linpro.com/techblog/images/posts/caddy2-logo.png
       - APP_NETWORK=public
-      - VIRTUAL_HOST=*.pknw1.co.uk,pknw1.co.uk
+      - VIRTUAL_HOST=*.admin.pknw1.co.uk,*.pknw1.co.uk,pknw1.co.uk,streaming-from.cloud,*.streaming-from.cloud
       - VIRTUAL_PORT=80
     deploy:
       resources:
@@ -167,16 +181,21 @@ services:
   homer:
     image: b4bz/homer
     container_name: homer
+    hostname: homer
     volumes:
-      - /etc/docker/config/homer/config2.yml:/www/assets/config.yml # Make sure your local config directory exists
+      - ./config/homer/config2.yml:/www/assets/config.yml # Make sure your local config directory exists
     user: 1000:1000 # default
     networks:
-      - admin
+      - proxy
+    dns:
+      - 172.22.20.1
+      - 8.8.8.8
+      - 100.100.100.100
     environment:
       - INIT_ASSETS=1 # default, requires the config directory to be writable for the container user (see user option)
       - APP_GROUP=Content
       - APP_LOGO=https://raw.githubusercontent.com/bastienwirtz/homer/main/public/logo.png
-      - VIRTUAL_HOST=homer.admin.pknw1.co.uk, admin.pknw1.co.uk
+      - VIRTUAL_HOST=homer.admin.pknw1.co.uk,admin.pknw1.co.uk
       - VIRTUAL_PORT=8080
     restart: always
  
@@ -187,11 +206,16 @@ services:
     hostname: dockergen_homer
     restart: unless-stopped
     volumes:
-      - /etc/docker/config/homer:/config
+      - ./config/homer:/config
+      - /etc/pihole:/etc/pihole
       - /var/run/docker.sock:/tmp/docker.sock
       - /var/run/docker.socker:/var/run/docker.sock
     networks:
-      - admin
+      - proxy
+    dns:
+      - 172.22.20.1
+      - 8.8.8.8
+      - 100.100.100.100
 
   uptime:
     container_name: uptime
@@ -199,11 +223,12 @@ services:
     image: louislam/uptime-kuma:latest
     dns:
       - 8.8.8.8
+      - 172.22.20.1
+      - 100.100.100.100
     networks:
-      admin:
-      public:
+      proxy:
     volumes:
-      - /etc/docker/config/uptime-kuma:/app/data
+      - ./config/uptime-kuma:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - PUID=0
@@ -222,9 +247,10 @@ services:
     hostname: portainer
     privileged: true
     networks:
-      - admin
+      - proxy
     volumes:
-      - /etc/docker/config/portainer:/data
+      - /etc/pknw1:/etc/pknw1
+      - ./config/portainer:/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - VIRTUAL_HOST=portainer.admin.pknw1.co.uk
@@ -237,11 +263,11 @@ services:
     container_name: registry
     hostname: registry
     networks:
-      - public
+      - proxy
     volumes:
       - ./config/registry:/config
     ports:
-      - 10.24.1.1:80:5000
+      - 172.22.20.1:5000:5000
     environment:
       - APP_GROUP=Core
       - APP_LOGO=https://symbols.getvecta.com/stencil_27/31_container-registry.9ac93f2e9f.png
@@ -256,16 +282,16 @@ services:
     image: joxit/docker-registry-ui:main
     restart: always
     networks:
-      - admin
+      - proxy
     environment:
-      - APP_GROUP=Utilities
+      - APP_GROUP=Core
       - APP_LOGO=https://symbols.getvecta.com/stencil_27/31_container-registry.9ac93f2e9f.png
       - VIRTUAL_HOST=docker.admin.pknw1.co.uk
       - SINGLE_REGISTRY=true
       - REGISTRY_TITLE=Docker Registry UI
       - DELETE_IMAGES=true
       - SHOW_CONTENT_DIGEST=true
-      - NGINX_PROXY_PASS_URL=http://10.24.1.1:80
+      - NGINX_PROXY_PASS_URL=http://172.22.20.1:5000
       - SHOW_CATALOG_NB_TAGS=true
       - CATALOG_MIN_BRANCHES=1
       - CATALOG_MAX_BRANCHES=1
@@ -279,32 +305,15 @@ services:
 networks:
   dmz:
     name: ${DMZ_NETWORK} 
-    ipam:
-      config:
-        - subnet: ${DMZ_NETWORK_SUBNET}
-          gateway: ${DMZ_NETWORK_ROUTE}
+    external: true
 
   public:
     name: public  
-    ipam:
-      config:
-        - subnet: ${PUBLIC_NETWORK_SUBNET}
-          gateway: ${PUBLIC_NETWORK_ROUTE}
-
-  secure:
-    name: secure
-    ipam:
-      config:
-        - subnet: ${SECURE_NETWORK_SUBNET}
-          gateway: ${SECURE_NETWORK_ROUTE}
+    external: true
 
   admin:
     name: admin      
-    ipam:
-      config:
-        - subnet: ${ADMIN_NETWORK_SUBNET}
-          gateway: ${ADMIN_NETWORK_ROUTE}
-
+    external: true
 
   proxy:
     name: proxy
